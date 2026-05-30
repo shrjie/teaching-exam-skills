@@ -1,0 +1,15 @@
+# 作業系統 / 編輯器
+desktop.ini
+.DS_Store
+*.tmp
+~$*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 敏感資料
+.env
+*.key
+credentials.*
