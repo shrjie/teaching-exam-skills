@@ -8,9 +8,33 @@ description: >
   本技能會上網搜尋與指定數學單元相關的生活情境與時事新聞，轉化為符合 Bloom 認知層次
   應用／分析層次的兩小題式非選題，共五大題，皆含詳細解析，並自動匯出為 Word 文件，
   數學方程式以 OMML 格式正確呈現（分數、根號、上標、絕對值等）。
+
+  相容於 OpenCode / Claude Code / 其他支援 Agent Skills 規格的 agent。
 ---
 
 # 國中數學生活情境非選擇題命題技能
+
+## 環境相容性
+
+本技能**預設為 OpenCode 環境設計**，同時也相容於 Claude Code 與其他符合 Agent Skills 規格的 agent。
+
+- 所有檔案路徑使用**相對路徑**（相對於目前工作目錄）
+- 工具呼叫：`bash`（取代 `bash_tool`）、`websearch`（取代 `web_search`）、`read`（取代 `view`）
+- 跨平台 `pip install` 寫法
+
+> ⚠️ **本技能依賴外部腳本**：`scripts/generate_exam_docx.py`（產出 Word 試卷）。本 repo **未包含**。如需實際產出 Word：
+> 1. 從原始 Claude 環境取得腳本（聯絡原作者或自行移植）
+> 2. 或自行以 `python-docx` 撰寫
+> 3. 或將 Step 6 改為「產出 Markdown 試卷草稿」交由使用者手動排版
+>
+> 此外，**`illustration` 情境氛圍圖**依賴外部 `draw` 技能（gpt-image-2 生圖）。本 repo 不包含此技能，若需要情境氛圍圖請：
+> - **選項 A**：自行實裝 `draw.py`（gpt-image-2 API 呼叫腳本），放在 `~/.claude/skills/draw/draw.py` 或環境變數 `DRAW_SCRIPT` 指定的位置
+> - **選項 B**：使用 OpenCode 的多模態模型直接生成（如果模型支援生圖）
+> - **選項 C**：省略 illustration 步驟，僅產出純文字＋幾何圖的試卷
+>
+> **幾何圖形**（`geometry`）則依賴 `jh-math-geometry` 技能（含在 fork 內），可正常運作。
+
+---
 
 ## 技能概覽
 
@@ -21,28 +45,28 @@ description: >
 - **第(1)小題**：閱讀素材，理解條件即可作答（Bloom 第2級：理解）
 - **第(2)小題**：承接第(1)題，結合數學單元，達到應用或分析層次（Bloom 第3-4級）
 - **每大題皆含完整解析**
-- **幾何圖形支援**：若題目涉及幾何情境，自動渲染 PNG 並插入 Word（內建，無需外部技能）
+- **幾何圖形支援**：若題目涉及幾何情境，自動渲染 PNG 並插入 Word
 - **匯出 Word 文件**，數學式以 OMML 正確格式呈現
 
 ---
 
 ## 數學標記語法（題目撰寫規則）
 
-在題目文字中，用大括號 {} 包住數學式，系統會自動轉為 Word 正確格式：
+在題目文字中，用大括號 `{}` 包住數學式，系統會自動轉為 Word 正確格式：
 
 | 標記語法 | 說明 |
 |---------|------|
-| {x^2} | x 的平方（上標） |
-| {x^{n+1}} | 上標含運算式 |
-| {x_1} | x 下標 1 |
-| {sqrt(2)} | 根號 2 |
-| {sqrt[3](8)} | 三次方根 8 |
-| {frac(3,4)} | 分數 3/4 |
-| {(a+b)/2} | 含運算式的分數 |
-| {|x-3|} | 絕對值 |
-| {<=} | 小於等於符號 |
-| {>=} | 大於等於符號 |
-| {!=} | 不等於符號 |
+| `{x^2}` | x 的平方（上標） |
+| `{x^{n+1}}` | 上標含運算式 |
+| `{x_1}` | x 下標 1 |
+| `{sqrt(2)}` | 根號 2 |
+| `{sqrt[3](8)}` | 三次方根 8 |
+| `{frac(3,4)}` | 分數 3/4 |
+| `{(a+b)/2}` | 含運算式的分數 |
+| `{\|x-3\|}` | 絕對值 |
+| `{<=}` | 小於等於符號 |
+| `{>=}` | 大於等於符號 |
+| `{!=}` | 不等於符號 |
 
 ---
 
@@ -56,7 +80,7 @@ description: >
 
 ### Step 2：網路搜尋生活情境
 
-使用 web_search 工具，至少進行 3–5 次搜尋，找 5 種不同主題素材：
+使用 `websearch` 工具（OpenCode 與 Claude Code 都內建），至少進行 3–5 次搜尋，找 5 種不同主題素材：
 - 購物/消費、環境/氣候、交通/運動、健康/醫療、科技/財經
 
 ---
@@ -64,7 +88,7 @@ description: >
 ### Step 3：設計題目
 
 每大題結構：素材段落 + 第(1)小題（理解層次）+ 第(2)小題（應用/分析層次）。
-數學式必須使用 {} 標記。兩小題需有連貫性，第(2)題用到第(1)題答案。
+數學式必須使用 `{}` 標記。兩小題需有連貫性，第(2)題用到第(1)題答案。
 
 ---
 
@@ -102,11 +126,11 @@ description: >
 **執行範本**：
 
 ```python
-# /home/claude/verify_math.py
+# exam_output/verify_math.py
 import json, math
 from pathlib import Path
 
-exam = json.loads(Path('/home/claude/exam_data.json').read_text(encoding='utf-8'))
+exam = json.loads(Path('exam_data.json').read_text(encoding='utf-8'))
 issues = []
 
 for q in exam['questions']:
@@ -123,13 +147,21 @@ if issues:
 print(f"[OK] 驗算通過 {len(exam['questions'])} 題")
 ```
 
+```bash
+python3 exam_output/verify_math.py
+```
+
 > **實作紀律**：驗算不通過 → 不准進 Step 5。
 
 ---
 
 ### Step 5：整理為 JSON 資料
 
-將題目整理為以下格式，儲存為 /home/claude/exam_data.json：
+將題目整理為以下格式，**儲存在工作目錄下**（預設 `exam_data.json`）：
+
+```bash
+mkdir -p exam_output
+```
 
 ```json
 {
@@ -163,7 +195,7 @@ print(f"[OK] 驗算通過 {len(exam['questions'])} 題")
 }
 ```
 
-#### ▶ illustration 欄位說明（情境氛圍圖，由 draw skill 生成）
+#### ▶ illustration 欄位說明（情境氛圍圖，由 draw skill 生成，可選）
 
 `illustration` 讓題目能嵌入一張「生活情境氛圍圖」，補足精確幾何圖所沒有的代入感。**可與 `geometry` 並存**。
 
@@ -191,14 +223,6 @@ print(f"[OK] 驗算通過 {len(exam['questions'])} 題")
 - `quality`：預設 `low`（NT$0.3），關鍵頁才升 `medium`
 - `width_cm`：插入 Word 時的寬度（公分），預設 5.5
 
-**生圖呼叫**（Step 5.7 會自動執行）：
-
-```bash
-python ~/.claude/skills/draw/draw.py \
-  "<prompt>" --size <size> --quality <quality> \
-  --name <id> --outdir /home/claude/illustrations/
-```
-
 #### ▶ geometry 欄位說明
 
 `geometry` 可放在大題（`source` 旁，全題共用一圖）或子題（`sub1`/`sub2`，各自有圖）。不需要圖形時設為 `null`。
@@ -208,7 +232,7 @@ python ~/.claude/skills/draw/draw.py \
 - 情境涉及幾何形狀（土地面積、建築結構、路線距離等）
 - 需要圖形輔助讀題理解
 
-**geometry 欄位格式：**
+**geometry 欄位格式**：
 
 ```json
 "geometry": {
@@ -226,7 +250,7 @@ python ~/.claude/skills/draw/draw.py \
 }
 ```
 
-> 所有 geometry.spec 的 type 與 config 參數見本 SKILL.md 末尾「幾何圖形參數速查（內嵌）」章節
+> 所有 `geometry.spec` 的 type 與 config 參數見本 SKILL.md 末尾「幾何圖形參數速查（內嵌）」章節
 
 ---
 
@@ -234,23 +258,40 @@ python ~/.claude/skills/draw/draw.py \
 
 **判斷是否需要執行**：掃描 `exam_data.json`，若任何題目或子題的 `geometry` 欄位不為 `null`，則執行本步驟。
 
+呼叫 `jh-math-geometry` 技能自動偵測腳本位置並渲染：
+
 ```bash
-# ── 0. 確認幾何腳本位置 ────────────────────────────────────
+# 0. 找幾何技能腳本
 GEOM_DIR=""
-for d in /mnt/skills/user/jh-math-geometry/scripts \
-          /tmp/jh-math-geometry/scripts; do
-  [ -f "$d/geometry_renderer.py" ] && GEOM_DIR="$d" && break
+for d in \
+  "./skills/jh-math-geometry" \
+  "$HOME/.claude/skills/jh-math-geometry" \
+  "$HOME/.opencode/skills/jh-math-geometry" \
+  "$HOME/.agents/skills/jh-math-geometry" \
+  "/Users/huangshrjie/Downloads/opencode/teaching-exam-skills/skills/jh-math-geometry" \
+  "/tmp/jh-math-geometry"; do
+  if [ -f "$d/scripts/geometry_renderer.py" ]; then
+    GEOM_DIR="$d"
+    break
+  fi
 done
+if [ -z "$GEOM_DIR" ]; then
+  echo "❌ 找不到 jh-math-geometry 腳本，請先安裝該技能"
+  exit 1
+fi
 echo "幾何腳本目錄：$GEOM_DIR"
 
-# ── 1. 安裝依賴 ─────────────────────────────────────────────
-pip install cairosvg python-docx --break-system-packages -q
+# 1. 安裝 cairosvg
+pip3 install --user --quiet cairosvg 2>/dev/null || \
+  pip3 install --break-system-packages --quiet cairosvg
 
-# ── 2. 從 exam_data.json 提取所有 geometry spec ─────────────
-python3 - <<'PYEOF'
+# 2. 從 exam_data.json 提取所有 geometry spec
+mkdir -p exam_output/geometry
+
+python3 - <<PYEOF
 import json
 
-exam = json.load(open('/home/claude/exam_data.json', encoding='utf-8'))
+exam = json.load(open('exam_data.json', encoding='utf-8'))
 figures = []
 
 def collect(geo, prefix):
@@ -278,42 +319,64 @@ if figures:
         'figures': [{'id': f['id'], 'type': f['type'], 'config': f['config'], 'canvas': f['canvas']} for f in figures],
         'options': {'format': 'png', 'dpi': 150}
     }
-    json.dump(spec_data, open('/home/claude/geometry_spec.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+    json.dump(spec_data, open('exam_output/geometry_spec.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
     mapping = {f['id']: {'caption': f['_caption'], 'key': f['_key']} for f in figures}
-    json.dump(mapping, open('/home/claude/geometry_mapping.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+    json.dump(mapping, open('exam_output/geometry_mapping.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
     print(f"✅ 需要渲染 {len(figures)} 張幾何圖形")
 else:
     print("ℹ️ 本份題目無幾何圖形，跳過渲染")
 PYEOF
 
-# ── 3. 渲染 ────────────────────────────────────────────────
-if [ -f /home/claude/geometry_spec.json ]; then
-  mkdir -p /home/claude/geometry_output
-  python3 "$GEOM_DIR/geometry_renderer.py" \
-      /home/claude/geometry_spec.json \
-      /home/claude/geometry_output/
+# 3. 渲染
+if [ -f exam_output/geometry_spec.json ]; then
+  python3 "$GEOM_DIR/scripts/geometry_renderer.py" \
+      exam_output/geometry_spec.json \
+      exam_output/geometry/
   echo "✅ 幾何圖形渲染完成："
-  ls /home/claude/geometry_output/*.png 2>/dev/null
+  ls exam_output/geometry/*.png 2>/dev/null
 fi
 ```
 
-> **視覺確認**：用 `view` 工具查看 `/home/claude/geometry_output/*.svg`，確認圖形正確再繼續。若有誤，修改對應題目的 `geometry.spec.config` 後重跑。
+> **視覺確認**：用 `read` 工具查看 `exam_output/geometry/*.svg`，確認圖形正確再繼續。若有誤，修改對應題目的 `geometry.spec.config` 後重跑。
 
 ---
 
-### Step 5.7：生情境插圖（若 JSON 中有 illustration 欄位）
+### Step 5.7：生情境插圖（若 JSON 中有 illustration 欄位，可選）
+
+> ⚠️ **本步驟需要 `draw` 技能**（gpt-image-2 生圖 API 呼叫腳本）。本 fork repo **不包含**此技能。
+>
+> 若環境中**無 `draw` 技能**：
+> 1. 跳過本步驟，僅產出純文字＋幾何圖的試卷
+> 2. 或自行實裝 `draw.py`（參考 gpt-image-2 API 規格）並設定 `DRAW_SCRIPT` 環境變數
+> 3. 或改用 OpenCode 多模態模型直接生圖（如 `gemini-2.5-flash-image`）
 
 **判斷是否需要執行**：掃描 `exam_data.json`，若任何題目或子題的 `illustration` 欄位不為 `null`，則執行本步驟。
 
 ```bash
-mkdir -p /home/claude/illustrations
-DRAW="python ~/.claude/skills/draw/draw.py"   # draw 生圖技能路徑；請改成你環境的對應路徑
+# 偵測 draw 技能
+DRAW_SCRIPT=""
+for d in \
+  "./skills/draw" \
+  "$HOME/.claude/skills/draw" \
+  "$HOME/.opencode/skills/draw" \
+  "$DRAW_SCRIPT_DIR"; do
+  if [ -f "$d/draw.py" ]; then
+    DRAW_SCRIPT="$d/draw.py"
+    break
+  fi
+done
 
-python3 - <<'PYEOF'
+if [ -z "$DRAW_SCRIPT" ]; then
+  echo "⚠️ 找不到 draw 技能，請設定 DRAW_SCRIPT_DIR 環境變數或安裝該技能"
+  echo "   跳過 illustration 生圖步驟"
+else
+  mkdir -p exam_output/illustrations
+
+  python3 - <<PYEOF
 import json, subprocess, sys
 from pathlib import Path
 
-exam = json.load(open('/home/claude/exam_data.json', encoding='utf-8'))
+exam = json.load(open('exam_data.json', encoding='utf-8'))
 jobs = []
 def collect(block):
     if block and block.get('illustration'):
@@ -328,41 +391,58 @@ print(f"→ 共 {len(jobs)} 張情境圖要生")
 for job in jobs:
     cmd = [
         sys.executable,
-        "~/.claude/skills/draw/draw.py",
+        "$DRAW_SCRIPT",
         job['prompt'],
         '--size', job.get('size', '1024x1024'),
         '--quality', job.get('quality', 'low'),
         '--name', job['id'],
-        '--outdir', '/home/claude/illustrations/',
+        '--outdir', 'exam_output/illustrations/',
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
     print(f"  [draw] {job['id']}  rc={result.returncode}")
 PYEOF
 
-ls /home/claude/illustrations/*.png 2>/dev/null
+  ls exam_output/illustrations/*.png 2>/dev/null
+fi
 ```
 
-> **視覺確認**：生完後用 `view` 工具檢查情境圖是否符合主題（教室情境、店內情境等），不合格就重生該張。
+> **視覺確認**：生完後用 `read` 工具檢查情境圖是否符合主題（教室情境、店內情境等），不合格就重生該張。
 
 ---
 
 ### Step 6：匯出 Word 文件（必做）
 
+> ⚠️ **此步驟需要 `generate_exam_docx.py` 腳本**，本 repo 未包含。
+
 ```bash
 # Step 6-1：找腳本目錄
-for d in /mnt/skills/user/jh-math-context-questions/scripts \
-          /tmp/jh-math-context-questions/scripts; do
-  [ -f "$d/generate_exam_docx.py" ] && SKILL_SCRIPTS="$d" && break
+SKILL_SCRIPTS=""
+for d in \
+  "./skills/jh-math-context-questions/scripts" \
+  "$HOME/.claude/skills/jh-math-context-questions/scripts" \
+  "$HOME/.opencode/skills/jh-math-context-questions/scripts" \
+  "$HOME/.agents/skills/jh-math-context-questions/scripts" \
+  "/tmp/jh-math-context-questions/scripts"; do
+  if [ -f "$d/generate_exam_docx.py" ]; then
+    SKILL_SCRIPTS="$d"
+    break
+  fi
 done
-echo "腳本目錄：$SKILL_SCRIPTS"
+
+if [ -z "$SKILL_SCRIPTS" ]; then
+  echo "❌ 找不到 generate_exam_docx.py，請安裝完整 jh-math-context-questions 腳本"
+  echo "   替代方案：以 Markdown 格式輸出試卷草稿"
+  exit 1
+fi
 
 # Step 6-2：安裝相依套件
-pip install python-docx lxml --break-system-packages -q
+pip3 install --user --quiet python-docx lxml 2>/dev/null || \
+  pip3 install --break-system-packages --quiet python-docx lxml
 
 # Step 6-3：產生文件
-cd "$SKILL_SCRIPTS"
-python3 generate_exam_docx.py /home/claude/exam_data.json /home/claude/exam_output.docx
-echo "✅ Word 初稿產出完成"
+mkdir -p exam_output
+python3 "$SKILL_SCRIPTS/generate_exam_docx.py" exam_data.json exam_output/
+echo "✅ Word 初稿產出完成：exam_output/exam_output.docx"
 ```
 
 ---
@@ -370,39 +450,30 @@ echo "✅ Word 初稿產出完成"
 ### Step 6.5：將幾何圖形插入 Word（若有幾何圖）
 
 ```bash
-if [ ! -f /home/claude/geometry_mapping.json ]; then
+if [ ! -f exam_output/geometry_mapping.json ]; then
   echo "ℹ️ 無幾何圖形，跳過插入步驟"
 else
-
-GEOM_DIR=""
-for d in /mnt/skills/user/jh-math-geometry/scripts \
-          /tmp/jh-math-geometry/scripts; do
-  [ -f "$d/insert_to_docx.py" ] && GEOM_DIR="$d" && break
-done
-
-python3 - <<PYEOF
+  python3 - <<PYEOF
 import json, sys, re
 from pathlib import Path
 from docx import Document
 from docx.shared import Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-sys.path.insert(0, "$GEOM_DIR")
+import sys
+sys.path.insert(0, "$GEOM_DIR/scripts")
 
-mapping = json.load(open('/home/claude/geometry_mapping.json', encoding='utf-8'))
-doc = Document('/home/claude/exam_output.docx')
+mapping = json.load(open('exam_output/geometry_mapping.json', encoding='utf-8'))
+doc = Document('exam_output/exam_output.docx')
 
-# 建立「題號關鍵字 → 段落索引」對照
 para_index = {}
 for i, para in enumerate(doc.paragraphs):
     text = para.text.strip()
-    # 大題標記：「第1題」「第一題」等
     m = re.search(r'第\s*([1-5一二三四五])\s*題', text)
     if m:
         raw = m.group(1)
         n = {'一':1,'二':2,'三':3,'四':4,'五':5}.get(raw, int(raw) if raw.isdigit() else None)
         if n:
             para_index.setdefault(f"q{n}_main", i)
-    # 子題標記
     for sub_label, sub_key_suffix in [('(1)','sub1'),('（1）','sub1'),('(2)','sub2'),('（2）','sub2')]:
         if sub_label in text:
             for back in range(1, 10):
@@ -417,10 +488,9 @@ for i, para in enumerate(doc.paragraphs):
                         para_index.setdefault(f"q{n2}_{sub_key_suffix}", i)
                     break
 
-# 從後往前插入
 insertions = []
 for fig_id, info in mapping.items():
-    png = Path(f"/home/claude/geometry_output/{fig_id}.png")
+    png = Path(f"exam_output/geometry/{fig_id}.png")
     if not png.exists():
         print(f"⚠️ 找不到圖形：{png}")
         continue
@@ -447,10 +517,9 @@ for para_idx, png, caption in insertions:
     target_el.addnext(img_para._element)
     print(f"✅ 插入 {png.name} → 段落 {para_idx}")
 
-doc.save('/home/claude/exam_output.docx')
+doc.save('exam_output/exam_output.docx')
 print("✅ 幾何圖形插入完成")
 PYEOF
-
 fi
 ```
 
@@ -459,21 +528,19 @@ fi
 ### Step 6.6：將情境插圖插入 Word（若有 illustration）
 
 ```bash
-if [ ! -d /home/claude/illustrations ] || [ -z "$(ls -A /home/claude/illustrations/*.png 2>/dev/null)" ]; then
+if [ ! -d exam_output/illustrations ] || [ -z "$(ls -A exam_output/illustrations/*.png 2>/dev/null)" ]; then
   echo "ℹ️ 無情境插圖，跳過"
 else
-
-python3 - <<'PYEOF'
+  python3 - <<'PYEOF'
 import json, re, glob
 from pathlib import Path
 from docx import Document
 from docx.shared import Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-exam = json.load(open('/home/claude/exam_data.json', encoding='utf-8'))
-doc = Document('/home/claude/exam_output.docx')
+exam = json.load(open('exam_data.json', encoding='utf-8'))
+doc = Document('exam_output/exam_output.docx')
 
-# 建立「題號 → 段落索引」對照
 para_idx = {}
 for i, p in enumerate(doc.paragraphs):
     m = re.search(r'第\s*([1-5一二三四五])\s*題', p.text.strip())
@@ -483,7 +550,6 @@ for i, p in enumerate(doc.paragraphs):
         if n:
             para_idx.setdefault(f"q{n}_main", i)
 
-# 蒐集每題 illustration
 inserts = []
 for q in exam['questions']:
     il = q.get('illustration')
@@ -492,12 +558,11 @@ for q in exam['questions']:
     key = f"q{q['number']}_main"
     if key not in para_idx:
         continue
-    cands = sorted(glob.glob(f"/home/claude/illustrations/{il['id']}_*.png"))
+    cands = sorted(glob.glob(f"exam_output/illustrations/{il['id']}_*.png"))
     if not cands:
         continue
     inserts.append((para_idx[key], cands[-1], float(il.get('width_cm', 5.5))))
 
-# 從後往前插（避免索引變動）
 inserts.sort(key=lambda x: -x[0])
 for idx, png_path, width_cm in inserts:
     img_para = doc.add_paragraph()
@@ -506,10 +571,9 @@ for idx, png_path, width_cm in inserts:
     doc.paragraphs[idx]._element.addnext(img_para._element)
     print(f"✅ 插入情境圖：{Path(png_path).name} → 段落 {idx}")
 
-doc.save('/home/claude/exam_output.docx')
+doc.save('exam_output/exam_output.docx')
 print("✅ 情境圖插入完成")
 PYEOF
-
 fi
 ```
 
@@ -518,12 +582,13 @@ fi
 ### Step 6.7：複製最終輸出
 
 ```bash
-UNIT=$(python3 -c "import json; d=json.load(open('/home/claude/exam_data.json')); print(d['unit'])")
-cp /home/claude/exam_output.docx "/mnt/user-data/outputs/非選擇題_${UNIT}.docx"
-echo "輸出：/mnt/user-data/outputs/非選擇題_${UNIT}.docx"
+UNIT=$(python3 -c "import json; d=json.load(open('exam_data.json')); print(d['unit'])")
+mkdir -p output
+cp exam_output/exam_output.docx "output/非選擇題_${UNIT}.docx"
+echo "輸出：output/非選擇題_${UNIT}.docx"
 ```
 
-最後使用 present_files 工具提供 Word 檔案下載。
+完成後向使用者提供最終檔案路徑。
 
 ---
 
@@ -541,7 +606,7 @@ echo "輸出：/mnt/user-data/outputs/非選擇題_${UNIT}.docx"
 **執行腳本**：
 
 ```python
-# /home/claude/compose_word_style.py
+# exam_output/compose_word_style.py
 import json, re, glob, sys
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -550,15 +615,39 @@ W, H = 1240, 1754
 MARGIN = 70
 BLACK = (30, 30, 30); BLUE = (30, 58, 95); GOLD = (201, 152, 0); GRAY = (150, 150, 150)
 
-# Windows：C:/Windows/Fonts/msjh*.ttc；macOS：/System/Library/Fonts/...
-FONT_DIR = "C:/Windows/Fonts"
-F_TITLE = ImageFont.truetype(f"{FONT_DIR}/msjhbd.ttc", 36)
-F_SUB = ImageFont.truetype(f"{FONT_DIR}/msjh.ttc", 20)
-F_INFO = ImageFont.truetype(f"{FONT_DIR}/msjh.ttc", 16)
-F_QNUM = ImageFont.truetype(f"{FONT_DIR}/msjhbd.ttc", 22)
-F_PTS = ImageFont.truetype(f"{FONT_DIR}/msjhbd.ttc", 18)
-F_SRC = ImageFont.truetype(f"{FONT_DIR}/msjh.ttc", 18)
-F_CAP = ImageFont.truetype(f"{FONT_DIR}/msjh.ttc", 12)
+# 跨平台字型偵測
+def find_font(bold=False, size=18):
+    """尋找可用的中文粗體/常規字型"""
+    candidates = [
+        # macOS
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/Library/Fonts/PingFang.ttc",
+        # Linux 常見
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        # Windows
+        "C:/Windows/Fonts/msjhbd.ttc",
+        "C:/Windows/Fonts/msjh.ttc",
+        "C:/Windows/Fonts/kaiti.ttf",
+    ]
+    for f in candidates:
+        if Path(f).exists():
+            try:
+                return ImageFont.truetype(f, size)
+            except:
+                continue
+    return ImageFont.load_default()
+
+F_TITLE  = find_font(bold=True,  size=36)
+F_SUB    = find_font(bold=False, size=20)
+F_INFO   = find_font(bold=False, size=16)
+F_QNUM   = find_font(bold=True,  size=22)
+F_PTS    = find_font(bold=True,  size=18)
+F_SRC    = find_font(bold=False, size=18)
+F_CAP    = find_font(bold=False, size=12)
 
 def clean_math(t):
     t = re.sub(r"\{frac\(([^,]+),([^)]+)\)\}", r"\1/\2", t)
@@ -591,7 +680,7 @@ def badge(draw, x, y, text, font, bg, fg):
     return y + h
 
 exam = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-out = sys.argv[2] if len(sys.argv) > 2 else "/home/claude/exam_word_style.png"
+out = sys.argv[2] if len(sys.argv) > 2 else "exam_output/exam_word_style.png"
 
 img = Image.new("RGB", (W, H), "white")
 d = ImageDraw.Draw(img)
@@ -613,29 +702,23 @@ base = Path(sys.argv[1]).parent
 for q in exam["questions"]:
     n = q["number"]
     y2 = badge(d, MARGIN, y, f"第 {n} 題", F_QNUM, BLUE, (255,255,255))
-    # 分數
     pts = f"{q.get('total_points',10)} 分"
     pw = d.textlength(pts, font=F_PTS)
     d.rounded_rectangle((W-MARGIN-pw-24, y, W-MARGIN, y2), radius=8, fill=GOLD)
     d.text((W-MARGIN-pw-12, y+6), pts, font=F_PTS, fill=(255,255,255))
     y = y2 + 14
 
-    # 右側圖區
     img_x = W - MARGIN - 320
     img_y = y
 
-    # 情境圖
-    cands = sorted(glob.glob(str(base / "illustrations" / f"q{n}_illus_*.png"))) + \
-            sorted(glob.glob(f"/home/claude/illustrations/q{n}_illus_*.png"))
+    cands = sorted(glob.glob(str(base / "illustrations" / f"q{n}_illus_*.png")))
     if cands:
         il = Image.open(cands[-1]).convert("RGB")
         il.thumbnail((320, 320), Image.LANCZOS)
         img.paste(il, (img_x, img_y))
         img_y += il.height + 20
 
-    # 幾何圖
-    geom_cands = [base / "geometry_output" / f"q{n}_main.png",
-                  Path(f"/home/claude/geometry_output/q{n}_main.png")]
+    geom_cands = [base / "geometry" / f"q{n}_main.png"]
     for gp in geom_cands:
         if gp.exists():
             g = Image.open(gp).convert("RGB")
@@ -644,7 +727,6 @@ for q in exam["questions"]:
             img_y += g.height + 20
             break
 
-    # 左側文字
     text_w = img_x - MARGIN - 20
     y = block(d, clean_math(q.get("source","")), MARGIN, y, F_SRC, text_w)
     y += 12
@@ -652,7 +734,7 @@ for q in exam["questions"]:
         s = q.get(key, {})
         txt = f"{lab} ({s.get('points',0)}分) {clean_math(s.get('question',''))}"
         y = block(d, txt, MARGIN, y, F_SRC, text_w)
-        y += 58  # 作答空白
+        y += 58
     y = max(y, img_y) + 14
     d.line([(MARGIN, y), (W-MARGIN, y)], fill=GRAY, width=1)
     y += 20
@@ -664,29 +746,33 @@ print(f"[OK] {out}")
 **執行**：
 
 ```bash
-python3 /home/claude/compose_word_style.py /home/claude/exam_data.json /home/claude/exam_word_style.png
-UNIT=$(python3 -c "import json; print(json.load(open('/home/claude/exam_data.json'))['unit'])")
-cp /home/claude/exam_word_style.png "/mnt/user-data/outputs/非選擇題_${UNIT}_word風.png"
+pip3 install --user --quiet Pillow 2>/dev/null || \
+  pip3 install --break-system-packages --quiet Pillow
+
+python3 exam_output/compose_word_style.py exam_data.json exam_output/exam_word_style.png
+mkdir -p output
+UNIT=$(python3 -c "import json; print(json.load(open('exam_data.json'))['unit'])")
+cp exam_output/exam_word_style.png "output/非選擇題_${UNIT}_word風.png"
 ```
 
 **跨平台注意**：
-- macOS/Linux：把 `C:/Windows/Fonts/msjhbd.ttc` 換成系統中文粗體字型（例如 `PingFang.ttc` 或 `Noto Sans CJK TC`）
-- Windows 無 cairo：`geometry_renderer` 產 SVG 後可用 Edge headless 轉 PNG：
+- 字型偵測已內建（macOS PingFang / Linux Noto CJK / Windows 微軟正黑體）
+- 無 cairo 時 `geometry_renderer` 產 SVG 後可用 Edge headless 轉 PNG：
   ```bash
-  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
     --headless --disable-gpu --window-size=520,420 \
-    --screenshot="<abs_out.png>" "file:///<abs_in.svg>"
+    --screenshot="exam_output/fig.png" "file://$(pwd)/exam_output/geometry/fig.svg"
   ```
 
 ---
 
 ## 數學格式注意事項
 
-1. **分數**：一律使用 {frac(分子,分母)}，不用 / 代替
-2. **次方**：使用 {x^2}，不直接貼 ² 字符
-3. **根號**：使用 {sqrt(x)}，不直接貼 √ 字符
-4. **簡單方程式**：像 2x + 3 = 7 這種，無需加 {}，保持普通文字即可
-5. **不等式符號**：一律用 {<=}、{>=}、{!=}
+1. **分數**：一律使用 `{frac(分子,分母)}`，不用 `/` 代替
+2. **次方**：使用 `{x^2}`，不直接貼 ² 字符
+3. **根號**：使用 `{sqrt(x)}`，不直接貼 √ 字符
+4. **簡單方程式**：像 `2x + 3 = 7` 這種，無需加 `{}`，保持普通文字即可
+5. **不等式符號**：一律用 `{<=}`、`{>=}`、`{!=}`
 
 ---
 
@@ -704,12 +790,12 @@ cp /home/claude/exam_word_style.png "/mnt/user-data/outputs/非選擇題_${UNIT}
 
 | 單元 | 標記範例 |
 |------|---------|
-| 一元一次方程式 | 設未知數 {x}，列式 {2*x+3=15} |
-| 一元一次不等式 | {x} {>=} 100 |
-| 比與比例式 | {frac(a,b)} = {frac(c,d)} |
-| 多項式（八年級） | {x^2} + 2x - 3 = 0 |
-| 根式（九年級） | {sqrt(2)}、{sqrt(3)} |
-| 二次方程式 | {x^2} + bx + c = 0 |
+| 一元一次方程式 | 設未知數 `{x}`，列式 `{2*x+3=15}` |
+| 一元一次不等式 | `{x} {>=} 100` |
+| 比與比例式 | `{frac(a,b)} = {frac(c,d)}` |
+| 多項式（八年級） | `{x^2} + 2x - 3 = 0` |
+| 根式（九年級） | `{sqrt(2)}`、`{sqrt(3)}` |
+| 二次方程式 | `{x^2} + bx + c = 0` |
 
 ---
 

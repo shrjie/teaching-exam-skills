@@ -2,11 +2,15 @@
 
 此文件說明如何透過 GitHub REST API 將小遊戲自動上傳並發佈至 GitHub Pages。
 
+> **OpenCode 相容性**：本指南已更新為 OpenCode 相容版本，使用 `bash` 工具與相對路徑，適用於 macOS / Linux / Windows。
+>
+> **Token 安全提醒**：絕對不要將 GitHub PAT commit 到 repo。建議透過環境變數 `GITHUB_TOKEN` 傳入，agent 結束後使用者可至 GitHub 撤銷 token。
+
 ---
 
 ## 前置需求：取得 GitHub Token
 
-Claude 第一次執行此流程時，**必須先詢問使用者**：
+Agent 第一次執行此流程時，**必須先詢問使用者**：
 
 > 「要自動發佈到 GitHub Pages，我需要您的：
 > 1. **GitHub Personal Access Token**（PAT）
@@ -16,11 +20,11 @@ Claude 第一次執行此流程時，**必須先詢問使用者**：
 > Token 申請步驟：GitHub → Settings → Developer Settings → Personal Access Tokens → Tokens (classic) → Generate new token
 > 需勾選的權限：`repo`（全選）
 >
-> ⚠️ Token 只會用於本次操作，不會儲存。"
+> ⚠️ Token 只會用於本次操作，不會寫入任何 commit 的檔案；建議透過環境變數 `GITHUB_TOKEN` 傳入。」
 
 ---
 
-## API 流程（Claude 使用 bash_tool 執行）
+## API 流程（agent 使用 `bash` 執行）
 
 ### Step A：建立或確認 Repository
 
@@ -28,7 +32,7 @@ Claude 第一次執行此流程時，**必須先詢問使用者**：
 # 檢查 repo 是否存在
 curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: token $GITHUB_TOKEN" \
-  https://api.github.com/repos/$GITHUB_USER/$REPO_NAME
+  "https://api.github.com/repos/$GITHUB_USER/$REPO_NAME"
 ```
 
 若回傳 404，則建立 repo：
@@ -43,14 +47,14 @@ curl -s -X POST \
 ### Step B：上傳每個 HTML 檔案
 
 ```bash
-# 將檔案轉為 base64 並上傳
-FILE_CONTENT=$(base64 -w 0 "$FILE_PATH")
+# 將檔案轉為 base64 並上傳（macOS 的 base64 不支援 -w，改用 tr 去除換行）
+FILE_CONTENT=$(base64 "$FILE_PATH" | tr -d '\n')
 FILE_NAME=$(basename "$FILE_PATH")
 
 # 先檢查檔案是否已存在（取得 SHA）
 SHA=$(curl -s \
   -H "Authorization: token $GITHUB_TOKEN" \
-  https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/contents/$FILE_NAME \
+  "https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/contents/$FILE_NAME" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sha',''))" 2>/dev/null)
 
 # 建立或更新檔案
@@ -59,14 +63,14 @@ if [ -z "$SHA" ]; then
   curl -s -X PUT \
     -H "Authorization: token $GITHUB_TOKEN" \
     -H "Content-Type: application/json" \
-    https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/contents/$FILE_NAME \
+    "https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/contents/$FILE_NAME" \
     -d "{\"message\": \"Add $FILE_NAME\", \"content\": \"$FILE_CONTENT\"}"
 else
   # 更新檔案（需提供 SHA）
   curl -s -X PUT \
     -H "Authorization: token $GITHUB_TOKEN" \
     -H "Content-Type: application/json" \
-    https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/contents/$FILE_NAME \
+    "https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/contents/$FILE_NAME" \
     -d "{\"message\": \"Update $FILE_NAME\", \"content\": \"$FILE_CONTENT\", \"sha\": \"$SHA\"}"
 fi
 ```
@@ -77,7 +81,7 @@ fi
 curl -s -X POST \
   -H "Authorization: token $GITHUB_TOKEN" \
   -H "Accept: application/vnd.github+json" \
-  https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/pages \
+  "https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/pages" \
   -d '{"source": {"branch": "main", "path": "/"}}'
 ```
 
@@ -88,7 +92,7 @@ curl -s -X POST \
 ```bash
 curl -s \
   -H "Authorization: token $GITHUB_TOKEN" \
-  https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/pages \
+  "https://api.github.com/repos/$GITHUB_USER/$REPO_NAME/pages" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('html_url',''))"
 ```
 
@@ -96,10 +100,15 @@ curl -s \
 
 ---
 
-## 完整上傳腳本（Python 版，更穩定）
+## 完整上傳腳本（Python 版，更穩定，跨平台）
+
+> 完整腳本已內嵌於 `SKILL.md` Step 6-2。此處提供精簡版供參考。
+> 腳本會存到 `output/github_upload.py`（建議加入 `.gitignore`）。
 
 ```python
-import base64, json, subprocess, sys, time
+# output/github_upload.py — GitHub Pages 自動發佈腳本
+import base64, json, subprocess, sys, time, argparse
+from pathlib import Path
 
 def github_api(method, endpoint, token, data=None):
     cmd = ["curl", "-s", "-X", method,
@@ -119,7 +128,6 @@ def upload_file(token, user, repo, filepath, filename):
     with open(filepath, 'rb') as f:
         content = base64.b64encode(f.read()).decode()
     
-    # 取得現有 SHA（若存在）
     existing = github_api("GET", f"/repos/{user}/{repo}/contents/{filename}", token)
     sha = existing.get("sha")
     
@@ -152,8 +160,8 @@ def publish_to_github(token, user, repo, html_files):
         print(f"{'✅' if success else '❌'} {filename}")
     
     # 3. 啟用 GitHub Pages
-    pages_result = github_api("POST", f"/repos/{user}/{repo}/pages", token,
-                              {"source": {"branch": "main", "path": "/"}})
+    github_api("POST", f"/repos/{user}/{repo}/pages", token,
+               {"source": {"branch": "main", "path": "/"}})
     
     # 4. 等待 Pages 啟用
     time.sleep(3)
@@ -161,13 +169,43 @@ def publish_to_github(token, user, repo, html_files):
     pages_url = pages_info.get("html_url", base_url)
     
     return True, pages_url
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--token", required=True)
+    parser.add_argument("--user", required=True)
+    parser.add_argument("--repo", required=True)
+    parser.add_argument("--files-dir", required=True)
+    args = parser.parse_args()
+    
+    files_dir = Path(args.files_dir)
+    html_files = [(str(p), p.name) for p in files_dir.glob("*.html")]
+    
+    if not html_files:
+        print("❌ 找不到任何 .html 檔案")
+        sys.exit(1)
+    
+    success, url = publish_to_github(args.token, args.user, args.repo, html_files)
+    print(f"\n✅ 發佈完成：{url}")
+```
+
+**使用方式**：
+
+```bash
+# 建議使用環境變數（推薦）
+export GITHUB_TOKEN="ghp_xxx..."
+python3 output/github_upload.py \
+  --token "$GITHUB_TOKEN" \
+  --user "$GITHUB_USER" \
+  --repo "$REPO_NAME" \
+  --files-dir "output/"
 ```
 
 ---
 
 ## QR Code 回傳格式
 
-發佈成功後，Claude 應以 Markdown 格式回傳每個遊戲的資訊：
+發佈成功後，agent 應以 Markdown 格式回傳每個遊戲的資訊：
 
 ```markdown
 ## ✅ 發佈成功！
@@ -205,5 +243,10 @@ def publish_to_github(token, user, repo, html_files):
 
 - GitHub Pages 啟用後約需 **1～3 分鐘**才能正式上線
 - 若使用者已有同名 Repo，會直接更新檔案（不覆蓋其他現有檔案）
-- Token 安全：提醒使用者不要將 Token 分享給他人，用完可在 GitHub 撤銷
+- Token 安全：
+  - 絕對不要將 GitHub PAT commit 到 repo
+  - 建議透過環境變數 `GITHUB_TOKEN` 傳入
+  - Agent 結束後提醒使用者至 GitHub 撤銷 token
+  - 若要使用 `base64 -w 0`（Linux）但環境是 macOS，改用 `base64 | tr -d '\n'`
 - Free 帳號的 GitHub Pages 為公開網頁，請勿存放敏感內容
+- 跨平台注意：macOS 的 `base64` 指令不支援 `-w` 參數，腳本已用 `tr -d '\n'` 替代

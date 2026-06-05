@@ -1107,8 +1107,18 @@ def main():
                     cairosvg.svg2png(bytestring=svg.encode(), write_to=str(png_path), dpi=dpi)
                     entry['png'] = str(png_path)
                     print(f"✅ {fig_id} → {png_path}")
-                except ImportError:
-                    print(f"⚠️  cairosvg 未安裝，僅輸出 SVG: {svg_path}")
+                except (ImportError, OSError):
+                    # cairosvg 未安裝或 Cairo 原生函式庫缺失，改用 svg_to_image.py
+                    try:
+                        sys.path.insert(0, str(Path(__file__).parent))
+                        from svg_to_image import svg_to_png
+                        svg_path_temp = out_dir / f"{fig_id}.svg"
+                        png_path = out_dir / f"{fig_id}.png"
+                        svg_to_png(svg_path_temp, png_path, dpi=dpi)
+                        entry['png'] = str(png_path)
+                        print(f"✅ {fig_id} → {png_path} (via svg_to_image 備援)")
+                    except Exception as e:
+                        print(f"⚠️  PNG 轉換失敗，僅輸出 SVG: {svg_path}（{e}）")
             else:
                 print(f"✅ {fig_id} → {svg_path}")
             results.append(entry)

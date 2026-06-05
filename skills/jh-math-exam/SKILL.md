@@ -6,9 +6,29 @@ description: >
   觸發情境包含：「幫我出數學考題」、「審一下這份考卷」、「做雙向細目表」、「依Bloom分級檢查題目」、
   「產出國中數學試題」、「段考命題」、「數學考卷格式」等。
   此技能整合修訂版 Bloom 認知層次四級分類（記憶/理解/應用/分析）、雙向細目表格式，以及光武國中段考卷的標準版面規格。
+
+  相容於 OpenCode / Claude Code / 其他支援 Agent Skills 規格的 agent。
 ---
 
 # 國中數學段考命題審題技能
+
+## 環境相容性
+
+本技能**預設為 OpenCode 環境設計**，同時也相容於 Claude Code 與其他符合 Agent Skills 規格的 agent。
+
+- 所有檔案路徑使用**相對路徑**（相對於目前工作目錄），不依賴 `/home/claude/`、`/mnt/` 等硬編碼位置
+- 工具呼叫使用標準名稱：`bash`（取代 `bash_tool`）、`read`（取代 `view`）
+- 跨平台 `pip install` 寫法（macOS 用 `--user`，Linux 容器用 `--break-system-packages`）
+
+> ⚠️ **本技能依賴外部腳本**：`scripts/generate_exam_docx.py`（產出 Word 試卷）、`scripts/bloom_review.py`（審題報告）。
+> 此 repo **未包含** 這些腳本（僅有 SKILL.md 規格說明）。如需實際產出 Word，請：
+> 1. 從原始 Claude 環境取得腳本（聯絡原作者或自行移植）
+> 2. 或自行以 `python-docx` 撰寫
+> 3. 或將 Step 6 的 Word 產出步驟改為「產出 Markdown 試卷草稿」交由使用者手動排版
+>
+> 同樣地，reference 檔（`bloom-taxonomy.md`、`shuangxiang-table.md`、`exam-format.md`、`jh-math-curriculum.md`）亦**未包含**於本 repo，agent 應以內嵌於本 SKILL.md 的內容為主。
+
+---
 
 ## 技能概覽
 
@@ -18,7 +38,7 @@ description: >
 1. 需求訪談 — 確認年級、範圍、題型、配分
 2. 規劃雙向細目表 — 章節 × 認知層次比例
 3. 生成題目 — 按 Bloom 四級分類產出
-4. **幾何圖形渲染** — 若有幾何題，自動產生配圖 PNG（內建，無需呼叫外部技能）
+4. **幾何圖形渲染** — 若有幾何題，自動產生配圖 PNG（呼叫 `jh-math-geometry` 技能）
 5. 格式輸出 — 題目卷、答案卷、雙向細目表（三份 Word），幾何圖自動插入對應位置
 
 **模式 B：審題模式**（審核現有考卷）
@@ -48,7 +68,7 @@ description: >
 
 ### Step 2：建立雙向細目表
 
-讀取 `references/shuangxiang-table.md` 取得格式規範，依下列結構規劃：
+依下列結構規劃雙向細目表（內嵌於本 SKILL.md，無需讀取外部檔案）：
 
 - **縱軸**：教材章節（依考試範圍列出各節名稱）
 - **橫軸**：認知層次（記憶 / 理解 / 應用 / 分析）
@@ -75,7 +95,7 @@ description: >
 - 正確答案 + 解題過程
 - **幾何圖形需求**（若題目需要圖，填寫 `geometry` 欄位，見下方 JSON 規格）
 
-**各層次出題原則**（參考 `references/bloom-taxonomy.md`）：
+**各層次出題原則**：
 
 - **第1級（記憶）**：辨認公式正確性、回憶定義，例如「下列何者是一元一次方程式？」
 - **第2級（理解）**：解釋步驟、辨別差異，例如「下列哪一步驟開始發生錯誤？」
@@ -125,7 +145,7 @@ A 出現 _ 次｜B 出現 _ 次｜C 出現 _ 次｜D 出現 _ 次
 
 #### 4-2 逐題審查
 
-讀取 `references/bloom-taxonomy.md` 的詳細分級準則，對每道題目判定：
+對每道題目判定：
 - **section**：歸屬哪個節次（如「1-1 等差數列」），依考試範圍的章節名稱填寫
 - **bloom_level**：第1~4級，填寫完整格式如「第3級（應用）」
 - **品質檢查**：題目是否清晰、選項是否有意義、非選題是否合理
@@ -151,11 +171,15 @@ Bloom 分佈：1級 __%、2級 __%、3級 __%、4級 __%
 
 #### 4-3 整理為審題 JSON
 
-審查完成後，將考卷資訊整理為審題 JSON，**儲存為 `/home/claude/exam_data.json`**：
+審查完成後，將考卷資訊整理為審題 JSON，**儲存在工作目錄下**（預設 `exam_data.json`）：
+
+```bash
+mkdir -p exam_output
+```
 
 > 審題模式不需填寫 `answer`、`solution`（可留空字串），重點在 `section` 與 `bloom_level`。
 > 非選擇題的 `sub_questions` 每小題**必須填入 `bloom_level` 與 `points`**，才能正確計入細目表。
-> **審題模式必須額外填寫 `review_report` 欄位**（見下方格式），腳本才會同步產出審題報告 Word 檔。
+> **審題模式必須額外填寫 `review_report` 欄位**（見下方格式）。
 
 **`review_report` 欄位格式（加在 JSON 最外層）**：
 
@@ -203,40 +227,64 @@ Bloom 分佈：1級 __%、2級 __%、3級 __%、4級 __%
 
 #### 4-4 執行腳本（審題模式，產出雙向細目表 + 審題報告）
 
+> ⚠️ **以下腳本需要 `generate_exam_docx.py`**，本 repo 未包含。若無法取得，請改用 Markdown 輸出（見替代方案）。
+
 ```bash
-# 找腳本目錄
-for d in /mnt/skills/user/jh-math-exam/scripts           /tmp/jh-math-exam/scripts; do
-  [ -f "$d/generate_exam_docx.py" ] && SKILL_SCRIPTS="$d" && break
+# 找腳本目錄（自動偵測安裝位置）
+SKILL_SCRIPTS=""
+for d in \
+  "./skills/jh-math-exam/scripts" \
+  "$HOME/.claude/skills/jh-math-exam/scripts" \
+  "$HOME/.opencode/skills/jh-math-exam/scripts" \
+  "$HOME/.agents/skills/jh-math-exam/scripts" \
+  "/tmp/jh-math-exam/scripts"; do
+  if [ -f "$d/generate_exam_docx.py" ]; then
+    SKILL_SCRIPTS="$d"
+    break
+  fi
 done
 
-pip install python-docx lxml --break-system-packages -q
-mkdir -p /home/claude/exam_output
-cd "$SKILL_SCRIPTS"
+if [ -z "$SKILL_SCRIPTS" ]; then
+  echo "❌ 找不到 generate_exam_docx.py，請安裝完整 jh-math-exam 腳本"
+  exit 1
+fi
 
-# ★ 審題模式加 --blueprint-only，產出雙向細目表與審題報告（兩份）
-python3 generate_exam_docx.py /home/claude/exam_data.json /home/claude/exam_output/ --blueprint-only
+# 安裝 python-docx
+pip3 install --user --quiet python-docx lxml 2>/dev/null || \
+  pip3 install --break-system-packages --quiet python-docx lxml
 
-GRADE=$(python3 -c "import json; d=json.load(open('/home/claude/exam_data.json')); print(d['grade'])")
-EN=$(python3 -c "import json; d=json.load(open('/home/claude/exam_data.json')); print(d['exam_number'])")
-cp "/home/claude/exam_output/${GRADE}數學第${EN}次段考_雙向細目表.docx" "/mnt/user-data/outputs/"
-[ -f "/home/claude/exam_output/${GRADE}數學第${EN}次段考_審題報告.docx" ] && \
-  cp "/home/claude/exam_output/${GRADE}數學第${EN}次段考_審題報告.docx" "/mnt/user-data/outputs/"
+mkdir -p exam_output
+
+# 審題模式加 --blueprint-only，產出雙向細目表與審題報告（兩份）
+python3 "$SKILL_SCRIPTS/generate_exam_docx.py" exam_data.json exam_output/ --blueprint-only
+
+GRADE=$(python3 -c "import json; d=json.load(open('exam_data.json')); print(d['grade'])")
+EN=$(python3 -c "import json; d=json.load(open('exam_data.json')); print(d['exam_number'])")
+echo "📄 雙向細目表：exam_output/${GRADE}數學第${EN}次段考_雙向細目表.docx"
+[ -f "exam_output/${GRADE}數學第${EN}次段考_審題報告.docx" ] && \
+  echo "📄 審題報告：exam_output/${GRADE}數學第${EN}次段考_審題報告.docx"
 echo "✅ 完成"
 ```
 
-最後使用 `present_files` 工具同時提供兩份 Word 檔下載（雙向細目表、審題報告）。
+**替代方案（無 `generate_exam_docx.py` 時）**：
+
+以 Markdown 格式在對話中直接輸出：
+- 雙向細目表（Markdown 表格）
+- 審題報告（包含統計、差異提示、品質問題）
+
+使用者可手動複製到 Word，或用其他工具轉檔。
 
 ---
 
 ### Step 5：整理為 JSON 資料
 
-將所有題目整理為以下格式，儲存為 `/home/claude/exam_data.json`：
+將所有題目整理為以下格式，**儲存在工作目錄下**（預設 `exam_data.json`）：
 
 #### ▶ geometry 欄位說明（出題模式專用）
 
 若題目需要幾何圖形配圖，在該題加入 `geometry` 欄位；不需要圖形則設為 `null`。
 
-**幾何圖形 spec 對照（常用類型快速複製）：**
+**幾何圖形 spec 對照（常用類型快速複製）**：
 
 | 題目類型 | geometry.spec.type | 常用 subtype |
 |---------|-------------------|-------------|
@@ -252,7 +300,7 @@ echo "✅ 完成"
 
 > 完整參數見本 SKILL.md 末尾「幾何圖形參數速查（內嵌）」章節
 
-**JSON 格式（含 geometry 欄位）：**
+**JSON 格式（含 geometry 欄位）**：
 
 ```json
 {
@@ -340,23 +388,41 @@ echo "✅ 完成"
 
 **判斷是否需要執行**：掃描 `exam_data.json`，若任何題目的 `geometry` 欄位不為 `null`，則執行本步驟。
 
+呼叫 `jh-math-geometry` 技能自動偵測腳本位置並渲染：
+
 ```bash
-# ── 0. 確認幾何腳本位置 ──────────────────────────────────────
+# 0. 找幾何技能腳本
 GEOM_DIR=""
-for d in /mnt/skills/user/jh-math-geometry/scripts \
-          /tmp/jh-math-geometry/scripts; do
-  [ -f "$d/geometry_renderer.py" ] && GEOM_DIR="$d" && break
+for d in \
+  "./skills/jh-math-geometry" \
+  "$HOME/.claude/skills/jh-math-geometry" \
+  "$HOME/.opencode/skills/jh-math-geometry" \
+  "$HOME/.agents/skills/jh-math-geometry" \
+  "/Users/huangshrjie/Downloads/opencode/teaching-exam-skills/skills/jh-math-geometry" \
+  "/tmp/jh-math-geometry"; do
+  if [ -f "$d/scripts/geometry_renderer.py" ]; then
+    GEOM_DIR="$d"
+    break
+  fi
 done
+if [ -z "$GEOM_DIR" ]; then
+  echo "❌ 找不到 jh-math-geometry 腳本，請先安裝該技能"
+  exit 1
+fi
 echo "幾何腳本目錄：$GEOM_DIR"
 
-# ── 1. 安裝依賴 ────────────────────────────────────────────
-pip install cairosvg python-docx --break-system-packages -q
+# 1. 安裝 cairosvg
+pip3 install --user --quiet cairosvg 2>/dev/null || \
+  pip3 install --break-system-packages --quiet cairosvg
 
-# ── 2. 從 exam_data.json 提取所有 geometry spec，建立 geometry_spec.json ──
-python3 - <<'PYEOF'
-import json, pathlib
+# 2. 從 exam_data.json 提取所有 geometry spec
+mkdir -p exam_output/geometry
 
-exam = json.load(open('/home/claude/exam_data.json', encoding='utf-8'))
+python3 - <<PYEOF
+import json
+import os
+
+exam = json.load(open('exam_data.json', encoding='utf-8'))
 figures = []
 
 def collect(q, prefix):
@@ -374,14 +440,11 @@ def collect(q, prefix):
             '_question_key': prefix
         })
 
-# 選擇題
 for q in exam.get('mc_questions', []):
     collect(q, f"mc_{q['number']}")
 
-# 非選擇題（大題層級）
 for q in exam.get('open_questions', []):
     collect(q, f"open_{q['number']}")
-    # 子題層級
     for sq in q.get('sub_questions', []):
         label = sq['label'].strip('()')
         collect(sq, f"open_{q['number']}_{label}")
@@ -391,27 +454,25 @@ if figures:
         'figures': [{'id': f['id'], 'type': f['type'], 'config': f['config'], 'canvas': f['canvas']} for f in figures],
         'options': {'format': 'png', 'dpi': 150}
     }
-    json.dump(spec_data, open('/home/claude/geometry_spec.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
-    # 儲存 caption mapping 供後續插入使用
+    json.dump(spec_data, open('exam_output/geometry_spec.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
     mapping = {f['id']: {'caption': f['_caption'], 'question_key': f['_question_key']} for f in figures}
-    json.dump(mapping, open('/home/claude/geometry_mapping.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+    json.dump(mapping, open('exam_output/geometry_mapping.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
     print(f"✅ 需要渲染 {len(figures)} 張幾何圖形")
 else:
     print("ℹ️ 本份考卷無幾何圖形，跳過渲染")
 PYEOF
 
-# ── 3. 渲染（若有圖形）────────────────────────────────────
-if [ -f /home/claude/geometry_spec.json ]; then
-  mkdir -p /home/claude/geometry_output
-  python3 "$GEOM_DIR/geometry_renderer.py" \
-      /home/claude/geometry_spec.json \
-      /home/claude/geometry_output/
+# 3. 渲染（若有圖形）
+if [ -f exam_output/geometry_spec.json ]; then
+  python3 "$GEOM_DIR/scripts/geometry_renderer.py" \
+      exam_output/geometry_spec.json \
+      exam_output/geometry/
   echo "✅ 幾何圖形渲染完成："
-  ls /home/claude/geometry_output/*.png 2>/dev/null || echo "（無 PNG 輸出）"
+  ls exam_output/geometry/*.png 2>/dev/null || echo "（無 PNG 輸出）"
 fi
 ```
 
-> **視覺確認**：用 `view` 工具查看 `/home/claude/geometry_output/*.svg`，確認圖形正確再繼續。若圖形有誤（標籤偏移、比例不佳），修改 `exam_data.json` 中對應的 `geometry.spec.config`，重新執行 Step 5.5。
+> **視覺確認**：用 `read` 工具查看 `exam_output/geometry/*.svg`，確認圖形正確再繼續。若圖形有誤，修改 `exam_data.json` 中對應的 `geometry.spec.config`，重新執行 Step 5.5。
 
 ---
 
@@ -419,24 +480,42 @@ fi
 
 JSON 整理完成後，執行以下腳本（同時產出題目卷與答案卷）：
 
+> ⚠️ **此步驟需要 `generate_exam_docx.py` 腳本**，本 repo 未包含。如無法取得，請改用 Markdown 輸出（見替代方案）。
+
 ```bash
 # Step 6-1：找腳本目錄
-for d in /mnt/skills/user/jh-math-exam/scripts \
-          /tmp/jh-math-exam/scripts; do
-  [ -f "$d/generate_exam_docx.py" ] && SKILL_SCRIPTS="$d" && break
+SKILL_SCRIPTS=""
+for d in \
+  "./skills/jh-math-exam/scripts" \
+  "$HOME/.claude/skills/jh-math-exam/scripts" \
+  "$HOME/.opencode/skills/jh-math-exam/scripts" \
+  "$HOME/.agents/skills/jh-math-exam/scripts" \
+  "/tmp/jh-math-exam/scripts"; do
+  if [ -f "$d/generate_exam_docx.py" ]; then
+    SKILL_SCRIPTS="$d"
+    break
+  fi
 done
-echo "腳本目錄：$SKILL_SCRIPTS"
+
+if [ -z "$SKILL_SCRIPTS" ]; then
+  echo "❌ 找不到 generate_exam_docx.py，請安裝完整 jh-math-exam 腳本"
+  echo "   替代方案：以 Markdown 格式輸出試卷草稿"
+  exit 1
+fi
 
 # Step 6-2：安裝相依套件
-pip install python-docx lxml --break-system-packages -q
+pip3 install --user --quiet python-docx lxml 2>/dev/null || \
+  pip3 install --break-system-packages --quiet python-docx lxml
 
 # Step 6-3：產生文件
-mkdir -p /home/claude/exam_output
-cd "$SKILL_SCRIPTS"
-python3 generate_exam_docx.py /home/claude/exam_data.json /home/claude/exam_output/
+mkdir -p exam_output
+python3 "$SKILL_SCRIPTS/generate_exam_docx.py" exam_data.json exam_output/
 
-GRADE=$(python3 -c "import json; d=json.load(open('/home/claude/exam_data.json')); print(d['grade'])")
-EN=$(python3 -c "import json; d=json.load(open('/home/claude/exam_data.json')); print(d['exam_number'])")
+GRADE=$(python3 -c "import json; d=json.load(open('exam_data.json')); print(d['grade'])")
+EN=$(python3 -c "import json; d=json.load(open('exam_data.json')); print(d['exam_number'])")
+echo "📄 題目卷：exam_output/${GRADE}數學第${EN}次段考_題目卷.docx"
+echo "📄 答案卷：exam_output/${GRADE}數學第${EN}次段考_答案卷（教師版）.docx"
+echo "📄 雙向細目表：exam_output/${GRADE}數學第${EN}次段考_雙向細目表.docx"
 echo "✅ Word 初稿產出完成"
 ```
 
@@ -445,55 +524,38 @@ echo "✅ Word 初稿產出完成"
 若 Step 5.5 有產出幾何圖形，執行以下後處理腳本，將 PNG 插入對應題目後方：
 
 ```bash
-# 確認是否有幾何圖形需要插入
-if [ ! -f /home/claude/geometry_mapping.json ]; then
+if [ ! -f exam_output/geometry_mapping.json ]; then
   echo "ℹ️ 無幾何圖形，跳過插入步驟"
 else
-
-GEOM_DIR=""
-for d in /mnt/skills/user/jh-math-geometry/scripts \
-          /tmp/jh-math-geometry/scripts; do
-  [ -f "$d/insert_to_docx.py" ] && GEOM_DIR="$d" && break
-done
-
-python3 - <<PYEOF
+  python3 - <<PYEOF
 import json, sys, re
 from pathlib import Path
 from docx import Document
-from docx.shared import Cm
+from docx.shared import Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-sys.path.insert(0, "$GEOM_DIR")
+import sys
+sys.path.insert(0, "$GEOM_DIR/scripts")
 from insert_to_docx import insert_figure
 
-exam   = json.load(open('/home/claude/exam_data.json',    encoding='utf-8'))
-mapping = json.load(open('/home/claude/geometry_mapping.json', encoding='utf-8'))
+exam   = json.load(open('exam_data.json',    encoding='utf-8'))
+mapping = json.load(open('exam_output/geometry_mapping.json', encoding='utf-8'))
 grade  = exam['grade']
 en     = exam['exam_number']
 
-docx_path = f"/home/claude/exam_output/{grade}數學第{en}次段考_題目卷.docx"
+docx_path = f"exam_output/{grade}數學第{en}次段考_題目卷.docx"
 doc = Document(docx_path)
 
-# ── 建立「題號 → 段落索引」對照 ──────────────────────────────
-# 策略：找段落文字以 "N." 開頭（選擇題）或 "（N）" / "大題N" 開頭（非選擇題）
 para_index = {}
 for i, para in enumerate(doc.paragraphs):
     text = para.text.strip()
-    # 選擇題：匹配「1.」「2.」...「16.」
     m = re.match(r'^(\d{1,2})[\.．]', text)
     if m:
         key = f"mc_{m.group(1)}"
         para_index.setdefault(key, i)
-    # 非選擇題大題：匹配「一、」「二、」「1、」「大題一」等或題號行
-    m2 = re.match(r'^[一二三四五六七八九十\d]+[、．.]', text)
-    if m2 and '題' in text[:6]:
-        # 記錄為 open_N 對應關係（依出現順序）
-        pass
 
-# 備援：找含「如圖」、「右圖」的段落
 for i, para in enumerate(doc.paragraphs):
     text = para.text.strip()
     if '如圖' in text or '右圖' in text or '下圖' in text:
-        # 嘗試從前文找題號
         for back in range(1, 4):
             if i - back >= 0:
                 prev = doc.paragraphs[i - back].text.strip()
@@ -503,11 +565,9 @@ for i, para in enumerate(doc.paragraphs):
                     para_index.setdefault(key, i)
                     break
 
-# ── 依 mapping 插入圖形 ──────────────────────────────────────
-# 先排序：讓插入從後往前，避免段落索引位移
 insertions = []
 for fig_id, info in mapping.items():
-    png_path = Path(f"/home/claude/geometry_output/{fig_id}.png")
+    png_path = Path(f"exam_output/geometry/{fig_id}.png")
     if not png_path.exists():
         print(f"⚠️ 找不到圖形：{png_path}")
         continue
@@ -516,39 +576,31 @@ for fig_id, info in mapping.items():
     if qkey in para_index:
         insertions.append((para_index[qkey], png_path, caption))
     else:
-        # 找不到對應段落：插在文件末尾並提示
         print(f"⚠️ 找不到題號段落 {qkey}，圖形將插在文件末尾")
         insertions.append((len(doc.paragraphs) - 1, png_path, f"[{qkey}] {caption}"))
 
-# 從後往前插入，保持段落索引正確
 insertions.sort(key=lambda x: -x[0])
 
 for para_idx, png_path, caption in insertions:
-    # 在目標段落「之後」插入圖片段落
-    # python-docx 沒有原生「after」插入，用 XML 操作
     from docx.oxml.ns import qn
     from copy import deepcopy
     import lxml.etree as etree
 
-    # 建立圖片段落
     img_para = doc.add_paragraph()
     img_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = img_para.add_run()
-    run.add_picture(str(png_path), width=Cm(5.5))  # 試卷圖寬 5.5cm
+    run.add_picture(str(png_path), width=Cm(5.5))
 
     if caption:
         cap_para = doc.add_paragraph(caption)
         cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for r in cap_para.runs:
-            from docx.shared import Pt
             r.font.size = Pt(9)
             r.font.italic = True
 
-    # 把剛 add 的段落（現在在文件末）移到目標位置後面
     target_el = doc.paragraphs[para_idx]._element
     img_el = img_para._element
 
-    # 如果有 caption，一起移動
     if caption:
         cap_el = cap_para._element
         target_el.addnext(cap_el)
@@ -561,23 +613,17 @@ for para_idx, png_path, caption in insertions:
 doc.save(docx_path)
 print(f"✅ 幾何圖形插入完成：{docx_path}")
 PYEOF
-
-fi  # end if geometry_mapping exists
+fi
 ```
 
-#### Step 6.6：複製最終輸出
+**完成後，向使用者提供**：
+- 圖片檔：`./exam_output/geometry/*.png`
+- Word 檔：
+  - `./exam_output/<grade>數學第<en>次段考_題目卷.docx`
+  - `./exam_output/<grade>數學第<en>次段考_答案卷（教師版）.docx`
+  - `./exam_output/<grade>數學第<en>次段考_雙向細目表.docx`
 
-```bash
-GRADE=$(python3 -c "import json; d=json.load(open('/home/claude/exam_data.json')); print(d['grade'])")
-EN=$(python3 -c "import json; d=json.load(open('/home/claude/exam_data.json')); print(d['exam_number'])")
-
-cp "/home/claude/exam_output/${GRADE}數學第${EN}次段考_題目卷.docx" "/mnt/user-data/outputs/"
-cp "/home/claude/exam_output/${GRADE}數學第${EN}次段考_答案卷（教師版）.docx" "/mnt/user-data/outputs/"
-cp "/home/claude/exam_output/${GRADE}數學第${EN}次段考_雙向細目表.docx" "/mnt/user-data/outputs/"
-echo "✅ 輸出完成"
-```
-
-最後使用 `present_files` 工具同時提供三份 Word 檔案下載（題目卷、答案卷、雙向細目表）。
+> OpenCode 環境下，使用者可直接從檔案總管開啟 `exam_output/` 目錄下載，或在 chat 介面用 `read` 工具預覽。
 
 ---
 
@@ -604,17 +650,17 @@ echo "✅ 輸出完成"
 
 ---
 
-## 快速參考：各技能詳細說明位置
+## 快速參考：內容位置
 
-| 需要什麼 | 讀取哪個檔案 |
-|----------|-------------|
-| Bloom 四級詳細準則、關鍵字、出題原則 | `references/bloom-taxonomy.md` |
-| 雙向細目表格式規範 | `references/shuangxiang-table.md` |
-| 題目卷 / 答案卷版面格式 | `references/exam-format.md` |
-| 108課綱三年數學完整章節、學習內容代碼（N/A/S/F/D）、學習表現代碼 | `references/jh-math-curriculum.md` |
-| 幾何圖形完整參數 + 快速複製範例 | 見下方「幾何圖形參數速查（內嵌）」章節 |
+| 需要什麼 | 在哪裡 |
+|----------|------|
+| Bloom 四級詳細準則、關鍵字、出題原則 | 本 SKILL.md Step 3（內嵌）|
+| 雙向細目表格式規範 | 本 SKILL.md Step 2（內嵌）|
+| 題目卷 / 答案卷版面格式 | 本 SKILL.md Step 6（內嵌 JSON 規格）|
+| 108課綱三年數學完整章節、學習內容代碼 | 依使用者提供的考試範圍即時查詢；本 repo 未含 `jh-math-curriculum.md` |
+| 幾何圖形完整參數 + 快速複製範例 | 見本 SKILL.md 末尾「幾何圖形參數速查（內嵌）」章節 |
 
-> **何時讀取課綱檔案**：確認考試範圍的學習內容代碼、撰寫雙向細目表的「對應課綱」欄位、或題目需與特定學習表現對齊時，請先讀取此檔案。
+> **何時查詢課綱內容**：確認考試範圍的學習內容代碼、撰寫雙向細目表的「對應課綱」欄位、或題目需與特定學習表現對齊時，使用 `websearch` 查詢「十二年國教 108 課綱 國中數學 學習內容」對應學期。
 
 ---
 
@@ -625,8 +671,9 @@ echo "✅ 輸出完成"
 - 選擇題選項不得出現「以上皆是」或「以上皆非」
 - 非選擇題每小題配分需明確標示於 `points` 欄位
 - 解題過程（`solution`）請用換行分隔每個步驟，方便排版
-- **【答案分佈】** 選擇題答案必須平均分佈於 A/B/C/D，且禁止連續兩題答案相同。整份 JSON 的 `mc_questions` 填寫完後，必須重新審查 `answer` 欄位序列，若有連續重複或嚴重不均，立即調整該題答案順序（同步調整 `options` 內容以匹配新答案）。
-- **【幾何圖形】** 若題目文字含「如圖」、「右圖」、「下圖」等字樣，必須填寫 `geometry` 欄位，不可留為 `null`。圖形 canvas 尺寸：試卷用圖建議 `280×220`；若兩圖並排則各用 `200×160`。
+- **【答案分佈】** 選擇題答案必須平均分佈於 A/B/C/D，且禁止連續兩題答案相同。整份 JSON 的 `mc_questions` 填寫完後，必須重新審查 `answer` 欄位序列，若有連續重複或嚴重不均，立即調整該題答案順序（同步調整 `options` 內容以匹配新答案）
+- **【幾何圖形】** 若題目文字含「如圖」、「右圖」、「下圖」等字樣，必須填寫 `geometry` 欄位，不可留為 `null`。圖形 canvas 尺寸：試卷用圖建議 `280×220`；若兩圖並排則各用 `200×160`
+- **【工作目錄】** 所有路徑以 agent 當下工作目錄為基準；建議在專案根目錄執行
 
 ---
 

@@ -13,3 +13,12 @@ __pycache__/
 .env
 *.key
 credentials.*
+
+# 教學遊戲輸出（GitHub Token 相關）
+output/github_upload.py
+output/illustrations/
+output/geometry/
+output/*.png
+output/*.html
+exam_output/
+
